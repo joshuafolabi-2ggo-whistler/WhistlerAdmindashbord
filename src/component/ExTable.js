@@ -19,7 +19,10 @@ import {
   DialogContent,
   DialogContentText,
   DialogTitle,
+  Collapse,
+  IconButton,
 } from '@mui/material';
+import { ExpandMore, ExpandLess } from '@mui/icons-material'; // For expand/collapse icons
 import AWS from 'aws-sdk';
 
 AWS.config.update({
@@ -37,6 +40,7 @@ const ExTable = () => {
   const [openModal, setOpenModal] = useState(false);
   const [selectedAction, setSelectedAction] = useState('');
   const [selectedUserId, setSelectedUserId] = useState(null);
+  const [openRows, setOpenRows] = useState({}); // Track open/close states of rows
 
   const fetchData = async () => {
     setLoading(true);
@@ -45,15 +49,19 @@ const ExTable = () => {
     };
     try {
       const data = await dynamodb.scan(params).promise();
+      console.log(data)
       const filteredItems = data.Items.filter(
         (item) =>
           !item.username.startsWith('signinwithapple') &&
           !item.username.startsWith('default') &&
           !item.username.startsWith('google')
-      );
+      ).sort((a, b) => {
+        const hasReportsA = a.reports?.length > 0 ? 1 : 0;
+        const hasReportsB = b.reports?.length > 0 ? 1 : 0;
+        return hasReportsB - hasReportsA;
+      });
 
       setUser(filteredItems);
-      console.log(filteredItems)
     } catch (error) {
       console.error('Error fetching data:', error);
     }
@@ -61,6 +69,7 @@ const ExTable = () => {
   };
 
   const handleValidateUser = async () => {
+
     if (!selectedUserId || !selectedAction) return;
 
     setLoading(true);
@@ -79,7 +88,6 @@ const ExTable = () => {
 
     try {
       await dynamodb.update(params).promise();
-      console.log('Update succeeded');
       fetchData();
     } catch (error) {
       console.error('Error updating item:', error);
@@ -101,6 +109,10 @@ const ExTable = () => {
     setSelectedAction('');
   };
 
+  const handleRowToggle = (index) => {
+    setOpenRows((prev) => ({ ...prev, [index]: !prev[index] }));
+  };
+
   const filteredUsers = user.filter(
     (item) =>
       item.first_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -114,6 +126,7 @@ const ExTable = () => {
 
   return (
     <>
+    
       <Backdrop
         sx={{ color: '#fff', zIndex: (theme) => theme.zIndex.drawer + 1 }}
         open={loading}
@@ -125,11 +138,11 @@ const ExTable = () => {
         component="main"
         sx={{
           flexGrow: 1,
-          bgcolor: '#ffffff',
+          bgcolor: '#f0f0f0',
           p: 4,
           transition: 'margin 0.3s ease',
-        }}
-      >
+        }}>
+        
         <Toolbar />
         <Paper
           elevation={0}
@@ -141,83 +154,102 @@ const ExTable = () => {
           }}
         >
           <Box sx={{ display: 'flex', justifyContent: 'center', mb: 3 }}>
-            <TextField
-              fullWidth
-              label="Search user"
+          
+          <TextField
+            fullWidth
+            label="Search user"
               placeholder="Search by First Name or Last Name in Lower case"
               variant="outlined"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              sx={{ mb: 2 }}
-            />
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            sx={{ mb: 2 }}
+          />
           </Box>
 
           <TableContainer>
             <Table>
               <TableHead>
                 <TableRow>
+                  <TableCell />
                   <TableCell>Full Name & Email</TableCell>
                   <TableCell>User Name</TableCell>
                   <TableCell>Status</TableCell>
                   <TableCell>Report Flag</TableCell>
-                  <TableCell align="right">Verify User</TableCell>
+                  <TableCell align="center">Actions</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
                 {filteredUsers.map((user, index) => (
-                  <TableRow
-                    key={index}
-                    sx={{
-                      backgroundColor: user.report_flags === 'flag'
-                        ? 'rgba(255, 0, 0, 0.1)' 
-                        : 'inherit',
-                    }}
-                  >
-                    <TableCell>
-                      <Typography variant="body1" fontWeight="bold">
-                        {user.first_name} {user.last_name}
-                      </Typography>
-                      <Typography variant="body2" color="textSecondary">
-                        {user.email}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>{user.username}</TableCell>
-                    <TableCell>{user.validation_status}</TableCell>
-                    <TableCell>
-                      {user.report_flags && (
-                        <Typography
-                          variant="body2"
-                          color="error"
-                          fontWeight="bold"
-                        >
-                          {user.report_flags}
+                  <React.Fragment key={index}>
+                    <TableRow style={{
+        backgroundColor: user.reports?.length > 0 ? '#FFCCCB' : 'white'
+      }}>
+                      <TableCell>
+                        <IconButton onClick={() => handleRowToggle(index)}>
+                          {openRows[index] ? <ExpandLess /> : <ExpandMore />}
+                        </IconButton>
+                      </TableCell>
+                      <TableCell>
+                        <Typography fontWeight="bold">
+                          {user.first_name} {user.last_name}
                         </Typography>
-                      )}
-                    </TableCell>
-                    <TableCell align="right">
-                      <Button
-                        onClick={() => handleOpenModal(user.user_id, 'approved')}
-                        variant="text"
-                        color="primary"
-                      >
-                        Verify
-                      </Button>
-                      <Button
-                        onClick={() => handleOpenModal(user.user_id, 'pending')}
-                        variant="text"
-                        color="warning"
-                      >
-                        Revoke
-                      </Button>
-                      <Button
-                        onClick={() => handleOpenModal(user.user_id, 'block')}
-                        variant="text"
-                        color="secondary"
-                      >
-                        Block
-                      </Button>
-                    </TableCell>
-                  </TableRow>
+                        <Typography variant="body2" color="textSecondary">
+                          {user.email}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>{user.username}</TableCell>
+                      <TableCell>{user.validation_status}</TableCell>
+                      <TableCell>{user.report_flags}</TableCell>
+                      <TableCell align="right">
+                        <Button
+                          onClick={() => handleOpenModal(user.user_id, 'approved')}
+                          color="primary"
+                        >
+                          Verify
+                        </Button>
+                        <Button
+                          onClick={() => handleOpenModal(user.user_id, 'pending')}
+                          color="warning"
+                        >
+                          Revoke
+                        </Button>
+                        <Button
+                          onClick={() => handleOpenModal(user.user_id, 'block')}
+                          color="secondary"
+                        >
+                          Block
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell colSpan={6} sx={{ p: 0 }}>
+                        <Collapse in={openRows[index]} timeout="auto" unmountOnExit>
+                          <Box sx={{ m: 2 }}>
+                            <Typography variant="h6" gutterBottom>
+                              Report Details:
+                            </Typography>
+                            {user.reports?.length > 0 ? (
+                              user.reports.map((report, reportIndex) => (
+                                <Box key={reportIndex} sx={{ mb: 1 }}>
+                                  <Typography variant="body1">
+                                    <strong>Message:</strong> {report.message}
+                                  </Typography>
+                                  <Typography variant="body2">
+                                    <strong>Room Code:</strong> {report.room_code}
+                                  </Typography>
+                                  <Typography variant="body2">
+                                    <strong>Reported User:</strong> {report.reported_user}
+                                  </Typography>
+                                </Box>
+                              ))
+                            ) : (
+                              <Typography>No Reports</Typography>
+                            )}
+                          </Box>
+                        </Collapse>
+                      </TableCell>
+                    </TableRow>
+                  </React.Fragment>
                 ))}
               </TableBody>
             </Table>
